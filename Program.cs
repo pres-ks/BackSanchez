@@ -2,79 +2,93 @@ using ConsumoAPI2.Api.Data;
 using ConsumoAPI2.Api.Models;
 using Microsoft.EntityFrameworkCore;
 
-var builder = WebApplication.CreateBuilder(args);
-
-// EF Core - Configuraci�n para Desarrollo/Producci�n
-builder.Services.AddDbContext<AppDbContext>(options =>
+try
 {
+    Console.WriteLine("🚀 INICIANDO APLICACIÓN...");
+    
+    var builder = WebApplication.CreateBuilder(args);
+
+    // LOG DETALLADO
+    Console.WriteLine("📝 Configurando servicios...");
+    
+    // 1. PRIMERO VERIFICAR LA CONNECTION STRING
     var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-
-    if (builder.Environment.IsDevelopment())
+    Console.WriteLine($"🔗 Connection String: {connectionString}");
+    
+    if (string.IsNullOrEmpty(connectionString))
     {
-        options.UseSqlServer(connectionString);
+        Console.WriteLine("❌ ERROR: Connection string está vacía o nula");
+        throw new Exception("Connection string no encontrada");
     }
-    else
-    {
-        options.UseNpgsql(connectionString);
-    }
-});
 
-// CORS
-var corsPolicy = "_allowFront";
-builder.Services.AddCors(options =>
-{
-    options.AddPolicy(name: corsPolicy, policy =>
+    // 2. CONFIGURAR DB CONTEXT CON MANEJO DE ERRORES
+    builder.Services.AddDbContext<AppDbContext>(options =>
     {
-        policy.WithOrigins(
-                "http://localhost:5069",
-                "https://localhost:7000",
-                "https://*.up.railway.app"
-            )
-            .AllowAnyHeader()
-            .AllowAnyMethod();
+        try
+        {
+            Console.WriteLine($"🌍 Environment: {builder.Environment.EnvironmentName}");
+            
+            if (builder.Environment.IsDevelopment())
+            {
+                Console.WriteLine("🛠️ Usando SQL Server para desarrollo");
+                options.UseSqlServer(connectionString);
+            }
+            else
+            {
+                Console.WriteLine("🐘 Usando PostgreSQL para producción");
+                options.UseNpgsql(connectionString);
+            }
+            Console.WriteLine("✅ DbContext configurado exitosamente");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"❌ ERROR configurando DbContext: {ex.Message}");
+            Console.WriteLine($"📄 StackTrace: {ex.StackTrace}");
+            throw;
+        }
     });
-});
 
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+    builder.Services.AddEndpointsApiExplorer();
+    builder.Services.AddSwaggerGen();
 
-var app = builder.Build();
+    Console.WriteLine("🔨 Construyendo aplicación...");
+    var app = builder.Build();
 
-app.UseCors(corsPolicy);
-app.UseSwagger();
-app.UseSwaggerUI();
+    Console.WriteLine("🌐 Configurando middleware...");
+    app.UseSwagger();
+    app.UseSwaggerUI();
 
-// Puerto para Railway
-var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
-app.Urls.Add($"http://0.0.0.0:{port}");
+    // ENDPOINTS SIMPLES PRIMERO
+    app.MapGet("/", () => {
+        Console.WriteLine("✅ Endpoint / ejecutado");
+        return "ConsumoAPI2.Api - Backend funcionando!";
+    });
+    
+    app.MapGet("/health", () => {
+        Console.WriteLine("✅ Endpoint /health ejecutado");
+        return new { status = "Healthy", timestamp = DateTime.UtcNow };
+    });
 
-// Tus endpoints
-app.MapGet("/", () => "ConsumoAPI2.Api - Backend con PostgreSQL!");
-app.MapGet("/api/products", async (AppDbContext db) => await db.Products.OrderBy(p => p.Id).ToListAsync());
-app.MapGet("/api/products/{id:int}", async (int id, AppDbContext db) => await db.Products.FindAsync(id) is { } p ? Results.Ok(p) : Results.NotFound());
-app.MapPost("/api/products", async (Product product, AppDbContext db) =>
+    // ENDPOINTS CON DB (TEMPORALMENTE COMENTADOS)
+    /*
+    app.MapGet("/api/products", async (AppDbContext db) => await db.Products.OrderBy(p => p.Id).ToListAsync());
+    app.MapGet("/api/products/{id:int}", async (int id, AppDbContext db) => await db.Products.FindAsync(id) is { } p ? Results.Ok(p) : Results.NotFound());
+    */
+
+    var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
+    Console.WriteLine($"🔊 Iniciando en puerto: {port}");
+    app.Urls.Add($"http://0.0.0.0:{port}");
+
+    Console.WriteLine("🎉 APLICACIÓN INICIADA EXITOSAMENTE");
+    app.Run();
+}
+catch (Exception ex)
 {
-    db.Products.Add(product);
-    await db.SaveChangesAsync();
-    return Results.Created($"/api/products/{product.Id}", product);
-});
-app.MapPut("/api/products/{id:int}", async (int id, Product input, AppDbContext db) =>
-{
-    var p = await db.Products.FindAsync(id);
-    if (p is null) return Results.NotFound();
-    p.Name = input.Name;
-    p.Price = input.Price;
-    p.Stock = input.Stock;
-    await db.SaveChangesAsync();
-    return Results.NoContent();
-});
-app.MapDelete("/api/products/{id:int}", async (int id, AppDbContext db) =>
-{
-    var p = await db.Products.FindAsync(id);
-    if (p is null) return Results.NotFound();
-    db.Products.Remove(p);
-    await db.SaveChangesAsync();
-    return Results.NoContent();
-});
-
-app.Run();
+    Console.WriteLine($"💥 ERROR CRÍTICO: {ex.Message}");
+    Console.WriteLine($"📄 StackTrace: {ex.StackTrace}");
+    
+    // Mantener el proceso vivo para ver los logs
+    Console.WriteLine("⏳ Manteniendo proceso vivo por 5 minutos...");
+    Thread.Sleep(300000); // 5 minutos
+    throw;
+}
