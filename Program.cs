@@ -1,8 +1,16 @@
 using ConsumoAPI2.Api.Data;
 using ConsumoAPI2.Api.Models;
 using Microsoft.EntityFrameworkCore;
+using System.Net.Http.Headers;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Configurar HttpClient para The Dog API
+builder.Services.AddHttpClient("DogAPI", client =>
+{
+    client.BaseAddress = new Uri("https://api.thedogapi.com/v1/");
+    client.DefaultRequestHeaders.Add("x-api-key", "live_IO5ZjVjwigVhC3SrfgvEMNe2fB22sSL5H998b9RAtEBkXIkPfRhEDlZQuWbKAcYz");
+});
 
 // Configurar Entity Framework con PostgreSQL
 builder.Services.AddDbContext<AppDbContext>(options =>
@@ -11,112 +19,106 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(connectionString);
 });
 
-// CORS - Permitir frontend
+// CORS
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowFrontend", policy =>
-    {
-        policy.WithOrigins(
-                "http://localhost:5069",
-                "https://localhost:7000",
-                "https://*.up.railway.app",
-                "http://localhost:3000"
-            )
-            .AllowAnyHeader()
-            .AllowAnyMethod();
-    });
+    options.AddPolicy("AllowAll", policy =>
+        policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod());
 });
-
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
+app.UseCors("AllowAll");
 
-app.UseCors("AllowFrontend");
-app.UseSwagger();
-app.UseSwaggerUI();
+// 🔥 ENDPOINTS CON THE DOG API 🔥
 
-// Endpoint básico
-app.MapGet("/", () => "API de Productos funcionando!");
-
-// 🔥 ENDPOINTS CRUD DE PRODUCTOS 🔥
-
-// GET - Obtener todos los productos
-app.MapGet("/api/products", async (AppDbContext db) =>
+// GET - Obtener razas de perros desde The Dog API
+app.MapGet("/api/dogs", async (IHttpClientFactory httpClientFactory) =>
 {
     try
     {
-        var products = await db.Products.OrderBy(p => p.Id).ToListAsync();
-        return Results.Ok(products);
+        var client = httpClientFactory.CreateClient("DogAPI");
+        var response = await client.GetAsync("breeds");
+        
+        if (response.IsSuccessStatusCode)
+        {
+            var content = await response.Content.ReadAsStringAsync();
+            return Results.Ok(content);
+        }
+        return Results.StatusCode((int)response.StatusCode);
     }
     catch (Exception ex)
     {
-        return Results.Problem($"Error al obtener productos: {ex.Message}");
+        return Results.Problem($"Error: {ex.Message}");
     }
 });
 
-// GET - Obtener producto por ID
-app.MapGet("/api/products/{id}", async (int id, AppDbContext db) =>
-{
-    var product = await db.Products.FindAsync(id);
-    return product != null ? Results.Ok(product) : Results.NotFound();
-});
-
-// POST - Crear nuevo producto
-app.MapPost("/api/products", async (Product product, AppDbContext db) =>
-{
-    try
-    {
-        db.Products.Add(product);
-        await db.SaveChangesAsync();
-        return Results.Created($"/api/products/{product.Id}", product);
-    }
-    catch (Exception ex)
-    {
-        return Results.Problem($"Error al crear producto: {ex.Message}");
-    }
-});
-
-// PUT - Actualizar producto
-app.MapPut("/api/products/{id}", async (int id, Product updatedProduct, AppDbContext db) =>
+// GET - Obtener una raza específica por ID
+app.MapGet("/api/dogs/{id}", async (int id, IHttpClientFactory httpClientFactory) =>
 {
     try
     {
-        var product = await db.Products.FindAsync(id);
-        if (product == null) return Results.NotFound();
-
-        product.Name = updatedProduct.Name;
-        product.Price = updatedProduct.Price;
-        product.Stock = updatedProduct.Stock;
-
-        await db.SaveChangesAsync();
-        return Results.Ok(product);
+        var client = httpClientFactory.CreateClient("DogAPI");
+        var response = await client.GetAsync($"breeds/{id}");
+        
+        if (response.IsSuccessStatusCode)
+        {
+            var content = await response.Content.ReadAsStringAsync();
+            return Results.Ok(content);
+        }
+        return Results.NotFound();
     }
     catch (Exception ex)
     {
-        return Results.Problem($"Error al actualizar producto: {ex.Message}");
+        return Results.Problem($"Error: {ex.Message}");
     }
 });
 
-// DELETE - Eliminar producto
-app.MapDelete("/api/products/{id}", async (int id, AppDbContext db) =>
+// GET - Buscar razas por nombre
+app.MapGet("/api/dogs/search/{name}", async (string name, IHttpClientFactory httpClientFactory) =>
 {
     try
     {
-        var product = await db.Products.FindAsync(id);
-        if (product == null) return Results.NotFound();
-
-        db.Products.Remove(product);
-        await db.SaveChangesAsync();
-        return Results.NoContent();
+        var client = httpClientFactory.CreateClient("DogAPI");
+        var response = await client.GetAsync($"breeds/search?q={name}");
+        
+        if (response.IsSuccessStatusCode)
+        {
+            var content = await response.Content.ReadAsStringAsync();
+            return Results.Ok(content);
+        }
+        return Results.NotFound();
     }
     catch (Exception ex)
     {
-        return Results.Problem($"Error al eliminar producto: {ex.Message}");
+        return Results.Problem($"Error: {ex.Message}");
     }
+});
+
+// 🔥 ENDPOINTS PARA FAVORITOS (TU BASE DE DATOS) 🔥
+
+// POST - Guardar un perro como favorito en tu DB
+app.MapPost("/api/favorites", async (DogFavorite favorite, AppDbContext db) =>
+{
+    db.DogFavorites.Add(favorite);
+    await db.SaveChangesAsync();
+    return Results.Created($"/api/favorites/{favorite.Id}", favorite);
+});
+
+// GET - Obtener todos los favoritos
+app.MapGet("/api/favorites", async (AppDbContext db) =>
+    await db.DogFavorites.ToListAsync());
+
+// DELETE - Eliminar de favoritos
+app.MapDelete("/api/favorites/{id}", async (int id, AppDbContext db) =>
+{
+    var favorite = await db.DogFavorites.FindAsync(id);
+    if (favorite == null) return Results.NotFound();
+    
+    db.DogFavorites.Remove(favorite);
+    await db.SaveChangesAsync();
+    return Results.Ok();
 });
 
 var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
 app.Urls.Add($"http://0.0.0.0:{port}");
-
 app.Run();
