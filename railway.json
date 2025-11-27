@@ -1,0 +1,9 @@
+{
+	"build": {
+		"builder": "NIXPACKS"
+	},
+	"deploy": {
+		"startCommand": "dotnet ConsumoAPI2.Api.dll",
+		"restartPolicyType": "ON_FAILURE"
+	}
+}
