@@ -10,13 +10,6 @@ try
 {
     Console.WriteLine("🚀 INICIANDO APLICACIÓN...");
 
-    // Configurar HttpClient para The Dog API
-    builder.Services.AddHttpClient("DogAPI", client =>
-    {
-        client.BaseAddress = new Uri("https://api.thedogapi.com/v1/");
-        client.DefaultRequestHeaders.Add("x-api-key", "live_IO5ZjVjwigVhC3SrfgvEMNe2fB22sSL5H998b9RAtEBkXIkPfRhEDlZQuWbKAcYz");
-    });
-
     // Configurar Entity Framework con PostgreSQL - CON MANEJO DE ERRORES
     var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
     Console.WriteLine($"🔗 Connection String: {!string.IsNullOrEmpty(connectionString)}");
@@ -38,7 +31,7 @@ try
     app.UseCors("AllowAll");
 
     // 🔥 ENDPOINT RAÍZ CRÍTICO - SIEMPRE DEBE EXISTIR
-    app.MapGet("/", () => "🐕 API de Perros funcionando! Usa /api/dogs para ver razas.");
+    app.MapGet("/", () => "✅ API de Usuarios funcionando! Usa /api/users para gestionar usuarios.");
 
     // 🔥 ENDPOINT DE HEALTH CHECK
     app.MapGet("/health", () => new { 
@@ -47,110 +40,87 @@ try
         database = !string.IsNullOrEmpty(connectionString)
     });
 
-    // 🔥 ENDPOINTS CON THE DOG API
-    app.MapGet("/api/dogs", async (IHttpClientFactory httpClientFactory) =>
+    // 🔥 ENDPOINTS PARA USUARIOS - CRUD COMPLETO
+    
+    // GET - Obtener todos los usuarios
+    app.MapGet("/api/users", async (AppDbContext db) =>
     {
         try
         {
-            var client = httpClientFactory.CreateClient("DogAPI");
-            var response = await client.GetAsync("breeds");
-            
-            if (response.IsSuccessStatusCode)
-            {
-                var content = await response.Content.ReadAsStringAsync();
-                return Results.Ok(content);
-            }
-            return Results.StatusCode((int)response.StatusCode);
+            return Results.Ok(await db.Users.ToListAsync());
         }
         catch (Exception ex)
         {
-            return Results.Problem($"Error: {ex.Message}");
+            return Results.Problem($"Error obteniendo usuarios: {ex.Message}");
         }
     });
 
-    // GET - Obtener una raza específica por ID
-    app.MapGet("/api/dogs/{id}", async (int id, IHttpClientFactory httpClientFactory) =>
+    // GET - Obtener un usuario por ID
+    app.MapGet("/api/users/{id}", async (int id, AppDbContext db) =>
     {
         try
         {
-            var client = httpClientFactory.CreateClient("DogAPI");
-            var response = await client.GetAsync($"breeds/{id}");
-            
-            if (response.IsSuccessStatusCode)
-            {
-                var content = await response.Content.ReadAsStringAsync();
-                return Results.Ok(content);
-            }
-            return Results.NotFound();
+            var user = await db.Users.FindAsync(id);
+            if (user == null) return Results.NotFound();
+            return Results.Ok(user);
         }
         catch (Exception ex)
         {
-            return Results.Problem($"Error: {ex.Message}");
+            return Results.Problem($"Error obteniendo usuario: {ex.Message}");
         }
     });
 
-    // GET - Buscar razas por nombre
-    app.MapGet("/api/dogs/search/{name}", async (string name, IHttpClientFactory httpClientFactory) =>
+    // POST - Crear un nuevo usuario
+    app.MapPost("/api/users", async (User user, AppDbContext db) =>
     {
         try
         {
-            var client = httpClientFactory.CreateClient("DogAPI");
-            var response = await client.GetAsync($"breeds/search?q={name}");
-            
-            if (response.IsSuccessStatusCode)
-            {
-                var content = await response.Content.ReadAsStringAsync();
-                return Results.Ok(content);
-            }
-            return Results.NotFound();
-        }
-        catch (Exception ex)
-        {
-            return Results.Problem($"Error: {ex.Message}");
-        }
-    });
-
-    // 🔥 ENDPOINTS PARA FAVORITOS - CON MANEJO DE ERRORES
-    app.MapPost("/api/favorites", async (DogFavorite favorite, AppDbContext db) =>
-    {
-        try
-        {
-            db.DogFavorites.Add(favorite);
+            db.Users.Add(user);
             await db.SaveChangesAsync();
-            return Results.Created($"/api/favorites/{favorite.Id}", favorite);
+            return Results.Created($"/api/users/{user.Id}", user);
         }
         catch (Exception ex)
         {
-            return Results.Problem($"Error guardando favorito: {ex.Message}");
+            return Results.Problem($"Error creando usuario: {ex.Message}");
         }
     });
 
-    app.MapGet("/api/favorites", async (AppDbContext db) =>
+    // PUT - Actualizar un usuario existente
+    app.MapPut("/api/users/{id}", async (int id, User updatedUser, AppDbContext db) =>
     {
         try
         {
-            return Results.Ok(await db.DogFavorites.ToListAsync());
-        }
-        catch (Exception ex)
-        {
-            return Results.Problem($"Error obteniendo favoritos: {ex.Message}");
-        }
-    });
-
-    app.MapDelete("/api/favorites/{id}", async (int id, AppDbContext db) =>
-    {
-        try
-        {
-            var favorite = await db.DogFavorites.FindAsync(id);
-            if (favorite == null) return Results.NotFound();
+            var user = await db.Users.FindAsync(id);
+            if (user == null) return Results.NotFound();
             
-            db.DogFavorites.Remove(favorite);
+            user.Name = updatedUser.Name;
+            user.Email = updatedUser.Email;
+            user.Role = updatedUser.Role;
+            
+            await db.SaveChangesAsync();
+            return Results.Ok(user);
+        }
+        catch (Exception ex)
+        {
+            return Results.Problem($"Error actualizando usuario: {ex.Message}");
+        }
+    });
+
+    // DELETE - Eliminar un usuario
+    app.MapDelete("/api/users/{id}", async (int id, AppDbContext db) =>
+    {
+        try
+        {
+            var user = await db.Users.FindAsync(id);
+            if (user == null) return Results.NotFound();
+            
+            db.Users.Remove(user);
             await db.SaveChangesAsync();
             return Results.Ok();
         }
         catch (Exception ex)
         {
-            return Results.Problem($"Error eliminando favorito: {ex.Message}");
+            return Results.Problem($"Error eliminando usuario: {ex.Message}");
         }
     });
 
